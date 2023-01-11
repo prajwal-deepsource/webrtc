@@ -252,7 +252,7 @@ async fn main() -> Result<()> {
                         let mut cs = pending_candidates3.lock().await;
                         cs.push(c);
                     } else if let Err(err) = signal_candidate(&addr3, &c).await {
-                        assert!(false, "{}", err);
+                        panic!("{}", err);
                     }
                 }
             }
@@ -367,7 +367,7 @@ async fn main() -> Result<()> {
             println!("received done signal!");
         }
         _ = tokio::signal::ctrl_c() => {
-            println!("");
+            println!();
         }
     };
 

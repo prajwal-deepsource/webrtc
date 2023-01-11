@@ -16,10 +16,8 @@ use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndicat
 use webrtc::rtp_transceiver::rtp_codec::{
     RTCRtpCodecCapability, RTCRtpHeaderExtensionCapability, RTPCodecType,
 };
-use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_local::{TrackLocal, TrackLocalWriter};
-use webrtc::track::track_remote::TrackRemote;
 use webrtc::Error;
 
 #[tokio::main]
@@ -75,7 +73,7 @@ async fn main() -> Result<()> {
     m.register_default_codecs()?;
 
     // Enable Extension Headers needed for Simulcast
-    for extension in vec![
+    for extension in [
         "urn:ietf:params:rtp-hdrext:sdes:mid",
         "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id",
         "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id",
@@ -117,7 +115,7 @@ async fn main() -> Result<()> {
 
     // Create Track that we send video back to browser on
     let mut output_tracks = HashMap::new();
-    for s in vec!["q", "h", "f"] {
+    for s in ["q", "h", "f"] {
         let output_track = Arc::new(TrackLocalStaticRTP::new(
             RTCRtpCodecCapability {
                 mime_type: MIME_TYPE_VP8.to_owned(),
@@ -154,74 +152,71 @@ async fn main() -> Result<()> {
 
     // Set a handler for when a new remote track starts
     let pc = Arc::downgrade(&peer_connection);
-    peer_connection.on_track(Box::new(
-        move |track: Option<Arc<TrackRemote>>, _receiver: Option<Arc<RTCRtpReceiver>>| {
-            if let Some(track) = track {
-                println!("Track has started");
+    peer_connection.on_track(Box::new(move |track, _, _| {
+        println!("Track has started");
 
-                let rid = track.rid().to_owned();
-                let output_track = if let Some(output_track) = output_tracks.get(&rid) {
-                    Arc::clone(output_track)
-                } else {
-                    println!("output_track not found for rid = {}", rid);
-                    return Box::pin(async {});
-                };
+        let rid = track.rid().to_owned();
+        let output_track = if let Some(output_track) = output_tracks.get(&rid) {
+            Arc::clone(output_track)
+        } else {
+            println!("output_track not found for rid = {}", rid);
+            return Box::pin(async {});
+        };
 
-                // Start reading from all the streams and sending them to the related output track
-                let media_ssrc = track.ssrc();
-                let pc2 = pc.clone();
-                tokio::spawn(async move {
-                    let mut result = Result::<usize>::Ok(0);
-                    while result.is_ok() {
-                        println!(
-                            "Sending pli for stream with rid: {}, ssrc: {}",
-                            rid, media_ssrc
-                        );
+        // Start reading from all the streams and sending them to the related output track
+        let media_ssrc = track.ssrc();
+        let pc2 = pc.clone();
+        tokio::spawn(async move {
+            let mut result = Result::<usize>::Ok(0);
+            while result.is_ok() {
+                println!(
+                    "Sending pli for stream with rid: {}, ssrc: {}",
+                    rid, media_ssrc
+                );
 
-                        let timeout = tokio::time::sleep(Duration::from_secs(3));
-                        tokio::pin!(timeout);
+                let timeout = tokio::time::sleep(Duration::from_secs(3));
+                tokio::pin!(timeout);
 
-                        tokio::select! {
-                            _ = timeout.as_mut() =>{
-                                if let Some(pc) = pc2.upgrade(){
-                                    result = pc.write_rtcp(&[Box::new(PictureLossIndication{
-                                        sender_ssrc: 0,
-                                        media_ssrc,
-                                    })]).await.map_err(Into::into);
-                                }else{
-                                    break;
-                                }
-                            }
-                        };
-                    }
-                });
-
-                tokio::spawn(async move {
-                    // Read RTP packets being sent to webrtc-rs
-                    println!("enter track loop {}", track.rid());
-                    while let Ok((rtp, _)) = track.read_rtp().await {
-                        if let Err(err) = output_track.write_rtp(&rtp).await {
-                            if Error::ErrClosedPipe != err {
-                                println!("output track write_rtp got error: {} and break", err);
-                                break;
-                            } else {
-                                println!("output track write_rtp got error: {}", err);
-                            }
+                tokio::select! {
+                    _ = timeout.as_mut() =>{
+                        if let Some(pc) = pc2.upgrade(){
+                            result = pc.write_rtcp(&[Box::new(PictureLossIndication{
+                                sender_ssrc: 0,
+                                media_ssrc,
+                            })]).await.map_err(Into::into);
+                        }else{
+                            break;
                         }
                     }
-                    println!("exit track loop {}", track.rid());
-                });
+                };
             }
-            Box::pin(async {})
-        },
-    ));
+        });
+
+        tokio::spawn(async move {
+            // Read RTP packets being sent to webrtc-rs
+            println!("enter track loop {}", track.rid());
+            while let Ok((rtp, _)) = track.read_rtp().await {
+                if let Err(err) = output_track.write_rtp(&rtp).await {
+                    if Error::ErrClosedPipe != err {
+                        println!("output track write_rtp got error: {} and break", err);
+                        break;
+                    } else {
+                        println!("output track write_rtp got error: {}", err);
+                    }
+                }
+            }
+            println!("exit track loop {}", track.rid());
+        });
+
+        Box::pin(async {})
+    }));
 
     let (done_tx, mut done_rx) = tokio::sync::mpsc::channel::<()>(1);
 
     // Set the handler for Peer connection state
     // This will notify you when the peer has connected/disconnected
     peer_connection.on_peer_connection_state_change(Box::new(move |s: RTCPeerConnectionState| {
-        print!("Peer Connection State has changed: {}\n", s);
+        println!("Peer Connection State has changed: {}", s);
 
         if s == RTCPeerConnectionState::Failed {
             // Wait until PeerConnection has had no network activity for 30 seconds or another failure. It may be reconnected using an ICE Restart.
@@ -263,7 +258,7 @@ async fn main() -> Result<()> {
             println!("received done signal!");
         }
         _ = tokio::signal::ctrl_c() => {
-            println!("");
+            println!();
         }
     };
 
