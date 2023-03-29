@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.0
+
 * Added support for insecure/deprecated signature verification algorithms, opt in via `SettingsEngine::allow_insecure_verification_algorithm` [#342](https://github.com/webrtc-rs/webrtc/pull/342).
 * Make RTCRtpCodecCapability::payloader_for_codec public API [#349](https://github.com/webrtc-rs/webrtc/pull/349).
 * Fixed a panic in `calculate_rtt_ms` [#350](https://github.com/webrtc-rs/webrtc/pull/350).
@@ -30,6 +32,33 @@
 * Change `RTCPeerConnection::add_transceiver_from_track` signature to `|&self, track: Arc<dyn TrackLocal + Send + Sync>, init: Option<RTCRtpTransceiverInit>,|` [#377](https://github.com/webrtc-rs/webrtc/pull/377).
 
 * Change `RTCPeerConnection::mid` return signature to `Option<String>` [#375](https://github.com/webrtc-rs/webrtc/pull/375).
+
+* Make functions non-async [#402](https://github.com/webrtc-rs/webrtc/pull/402):
+    - `MediaEngine`:
+        - `get_codecs_by_kind`;
+        - `get_rtp_parameters_by_kind`.
+    - `RTCRtpTransceiver`:
+        - `sender`;
+        - `set_sender`;
+        - `receiver`.
+    - `RTPReceiverInternal`:
+        - `set_transceiver_codecs`;
+        - `get_codecs`.
+    - `RTCRtpSender`:
+        - `set_rtp_transceiver`;
+        - `has_sent`.
+    - `TrackRemote`:
+        - `id`;
+        - `set_id`;
+        - `stream_id`;
+        - `set_stream_id`;
+        - `msid`;
+        - `codec`;
+        - `set_codec`;
+        - `params`;
+        - `set_params`;
+        - `onmute`;
+        - `onunmute`.
 
 ## v0.6.0
 
